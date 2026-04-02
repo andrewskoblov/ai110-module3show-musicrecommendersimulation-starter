@@ -10,7 +10,7 @@
 
 ## 2. Intended Use
 
-VibeFinder 1.0 suggests up to 5 songs from a small 10-song catalog based on a user's preferred genre, mood, energy level, and acoustic taste. It is built for classroom exploration of how content-based recommendation systems work. It is not intended for real users or production use.
+VibeFinder 1.0 suggests up to 5 songs from a 20-song catalog based on a user's preferred genre, mood, energy level, and acoustic taste. It is built for classroom exploration of how content-based recommendation systems work. It is not intended for real users or production use.
 
 ---
 
@@ -30,11 +30,11 @@ All songs are ranked by their total score, and the top results are returned with
 
 ## 4. Data
 
-- The catalog contains **10 songs** from `data/songs.csv`.
-- No songs were added or removed from the starter dataset.
-- Genres represented: pop, lofi, rock, ambient, jazz, synthwave, indie pop.
-- Moods represented: happy, chill, intense, relaxed, moody, focused.
-- The dataset reflects a Western, English-language taste profile skewed toward electronic and indie music. No classical, hip-hop, R&B, country, or non-English music is present.
+- The catalog contains **20 songs** from `data/songs.csv`.
+- 10 songs were added to the starter dataset to improve genre diversity.
+- Genres represented: pop, lofi, rock, ambient, jazz, synthwave, indie pop, hip-hop, R&B, country, latin, electronic, folk, reggae, metal, j-pop.
+- Moods represented: happy, chill, intense, relaxed, moody, focused, melancholy, peaceful.
+- The dataset still reflects a mostly Western, English-language taste profile. Most genres appear only once or twice, meaning any genre-matched user has very few real options.
 
 ---
 
@@ -44,46 +44,56 @@ All songs are ranked by their total score, and the top results are returned with
 - The energy proximity score means the system avoids extremes — it doesn't blindly favor the loudest or quietest track, just the one closest to the user's stated preference.
 - The scoring logic is fully transparent: every point can be traced back to a specific attribute match, making explanations easy to generate.
 - Simple enough to reason about without a machine learning background.
+- Weights are parameterized, making it easy to experiment without changing the core logic.
 
 ---
 
 ## 6. Limitations and Bias
 
-- **Exact genre and mood matching** means "indie pop" and "pop" are treated as completely unrelated, even though a pop fan might enjoy indie pop songs.
-- **Small catalog** means a user whose favorite genre appears only once (e.g., synthwave) will always get that one song ranked first regardless of other attributes.
-- **Genre and mood dominate the score.** A song that matches both genre and mood but has the wrong energy will often beat a song with perfect energy but no genre match. This may not reflect how people actually experience music.
-- **No listening history.** Every user session starts from scratch. The system cannot learn or adapt.
-- **Western genre bias.** The catalog has no representation of hip-hop, R&B, country, classical, or any non-English musical tradition. Users whose taste falls outside this set receive poor recommendations.
-- **Acousticness binary.** The `likes_acoustic` preference is a true/false flag, which flattens a nuanced preference into two buckets.
+**Genre dominance is the system's biggest flaw.** When a user has a genre preference, genre match alone (2.0 points) accounts for ~40% of the maximum possible score. This means a song that perfectly matches genre and mood but has completely wrong energy can outscore a song that perfectly matches energy and mood in a different genre. In the "Conflicted Jazz" profile test (genre=jazz, energy=0.9), Coffee Shop Stories ranked #1 with a score of 4.02 — even though its energy (0.37) was 0.53 away from the user's target of 0.90. The genre+mood combination simply overrode the energy signal.
+
+**Additional limitations discovered through testing:**
+- **Exact-match genre scoring** means "indie pop" and "pop" are treated as unrelated, which fails users with broad tastes.
+- **Unknown genre cold-start problem.** When the user's favorite genre is not in the catalog (tested with "classical"), the maximum achievable score drops from 5.0 to 3.0. The system still returns results, but they are driven entirely by mood and energy — the user gets folk and ambient music instead of the classical they want. This is not disclosed to the user.
+- **Acousticness is a binary flag.** A user who likes "a little acoustic texture" gets the same score as someone who only listens to solo guitar.
+- **No listening history.** Every session starts from scratch. The system cannot learn or adapt.
+- **Single-song genres** — most genres appear once in the 20-song catalog. Any user with a niche genre preference effectively gets one guaranteed result and four fallback results.
 
 ---
 
 ## 7. Evaluation
 
-Three user profiles were tested manually:
+Five user profiles were tested, including two adversarial edge cases:
 
-| Profile | Expected top result | Actual top result | Match? |
+| Profile | Top result | Score | Intuitive? |
 |---|---|---|---|
-| pop, happy, energy=0.8, not acoustic | Sunrise City (pop/happy/0.82) | Sunrise City | Yes |
-| lofi, chill, energy=0.4, acoustic | Library Rain (lofi/chill/0.35) | Library Rain | Yes |
-| rock, intense, energy=0.9, not acoustic | Storm Runner (rock/intense/0.91) | Storm Runner | Yes |
+| pop, happy, energy=0.85, not acoustic | Sunrise City [pop/happy] | 4.88 | Yes |
+| lofi, chill, energy=0.38, acoustic | Library Rain [lofi/chill] | 4.90 | Yes |
+| rock, intense, energy=0.92, not acoustic | Storm Runner [rock/intense] | 4.94 | Yes |
+| jazz, relaxed, energy=0.90 (conflicting) | Coffee Shop Stories [jazz/relaxed] | 4.02 | Partially — genre+mood won but energy was ignored |
+| classical, peaceful, energy=0.30 (unknown genre) | Mountain Echo [folk/peaceful] | 2.96 | Reasonable fallback, but not what the user asked for |
 
-All three profiles returned an intuitive first recommendation. The automated tests (`pytest`) also confirm that the pop/happy profile ranks the pop song above the lofi song, and that explanations are non-empty strings.
+**Weight-shift experiment:** Running the "Conflicted Jazz" profile with `genre_weight=1.0, energy_weight=2.0` changed the #2 result from Quarter Past Blue (jazz/moody, low energy) to Golden Hour Drift (r&b/relaxed, medium energy). The #1 result stayed the same because Coffee Shop Stories still earned genre+mood points. The experiment confirmed that genre is the dominant driver and that doubling energy weight can shift secondary results toward more energy-appropriate songs, but genre will keep "winning" as long as there is a match in the catalog.
+
+The automated tests (`pytest`) confirm the pop/happy profile ranks the pop song above the lofi song, and that explanations are non-empty strings.
 
 ---
 
 ## 8. Future Work
 
-- **Fuzzy genre matching** — treat "indie pop" and "pop" as partially overlapping rather than entirely separate categories.
-- **Include tempo and valence** — these features are in the dataset but unused; they could improve energy-feel matching.
+- **Fuzzy genre matching** — treat "indie pop" and "pop" as partially overlapping rather than completely separate, using a similarity table or genre embeddings.
+- **Include tempo and valence** — these features are in the dataset but unused; they would add nuance to what "energetic" actually means (a fast jazz track vs. a fast metal track feel very different).
 - **Diversity injection** — force the top-5 list to include at least two different genres so users aren't shown five nearly identical tracks.
+- **Cold-start warning** — if the user's genre is not in the catalog, inform them that genre matching is unavailable rather than silently returning fallback results.
 - **Implicit feedback loop** — track which recommendations the user skips or replays to update their profile over time.
-- **Larger catalog** — 10 songs is too few for meaningful recommendations; a real test would need hundreds of entries across more genres and cultures.
+- **Larger catalog** — 20 songs is not enough for meaningful recommendations; a real test would need hundreds of entries across more genres and cultures.
 
 ---
 
 ## 9. Personal Reflection
 
-Building VibeFinder made it clear that a recommender is really just a structured way of measuring distance between a user's stated preferences and a song's attributes. The math itself is simple — addition and subtraction — but the choices about what to weight heavily and what to ignore have a huge impact on who the system serves well and who it leaves behind.
+Building VibeFinder made it clear that a recommender is really just a structured way of measuring distance between a user's stated preferences and a song's attributes. The math is simple — addition and subtraction — but the choices about what to weight heavily and what to ignore have a huge impact on who the system serves well and who it leaves behind.
 
-The most surprising discovery was how quickly genre dominance kicked in with a small catalog. A user whose favorite genre had only one or two songs in the dataset would get those songs recommended no matter what, even if the energy or mood was wrong. At scale, this could create "filter bubbles" where users are never exposed to music outside the genres already well-represented in the platform's catalog. Human judgment still matters here — someone needs to decide what goes into the catalog in the first place, and that curatorial decision shapes every recommendation the model will ever make.
+The most surprising discovery came from the "Conflicted Jazz" profile — a user who wants jazz but at high energy (0.90). The system recommended Coffee Shop Stories, a slow jazz track at energy 0.37, as the #1 result. The genre and mood match completely overrode the energy mismatch. That's not how a real listener would experience it: they'd immediately skip a slow coffee shop track when they wanted something intense. The system looked correct on paper (it matched two out of four criteria) but would have felt totally wrong in practice.
+
+This changed how I think about real music apps. Spotify or YouTube probably have much better energy-aware models, but they still create filter bubbles — if you mostly listen to one genre, the algorithm keeps feeding you that genre and you never discover what else you might love. Human curation still matters because humans can make surprising, cross-genre recommendations that a score-based system would never generate.

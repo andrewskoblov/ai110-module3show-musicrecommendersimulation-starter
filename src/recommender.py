@@ -115,44 +115,64 @@ def load_songs(csv_path: str) -> List[Dict]:
     return songs
 
 
-def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
+def score_song(
+    user_prefs: Dict,
+    song: Dict,
+    genre_weight: float = 2.0,
+    mood_weight: float = 1.5,
+    energy_weight: float = 1.0,
+    acoustic_weight: float = 0.5,
+) -> Tuple[float, List[str]]:
     """Score one song dict against user preferences; return (score, list_of_reasons).
 
-    Scoring weights:
+    Default weights:
       +2.0  genre match
       +1.5  mood match
       +1.0  scaled by energy proximity  (1 - |target - song_energy|)
       +0.5  scaled by acousticness preference
+
+    Pass custom weights to run experiments without modifying this function.
     """
     score = 0.0
     reasons: List[str] = []
 
     if song["genre"] == user_prefs.get("genre"):
-        score += 2.0
-        reasons.append("genre match (+2.0)")
+        score += genre_weight
+        reasons.append(f"genre match (+{genre_weight})")
 
     if song["mood"] == user_prefs.get("mood"):
-        score += 1.5
-        reasons.append("mood match (+1.5)")
+        score += mood_weight
+        reasons.append(f"mood match (+{mood_weight})")
 
     target_energy = user_prefs.get("energy", 0.5)
-    energy_points = round(1.0 * (1.0 - abs(target_energy - song["energy"])), 2)
+    energy_points = round(energy_weight * (1.0 - abs(target_energy - song["energy"])), 2)
     score += energy_points
     reasons.append(f"energy proximity (+{energy_points})")
 
     likes_acoustic = user_prefs.get("likes_acoustic", False)
     if likes_acoustic:
-        acoustic_points = round(0.5 * song["acousticness"], 2)
+        acoustic_points = round(acoustic_weight * song["acousticness"], 2)
         reasons.append(f"acoustic preference (+{acoustic_points})")
     else:
-        acoustic_points = round(0.5 * (1.0 - song["acousticness"]), 2)
+        acoustic_points = round(acoustic_weight * (1.0 - song["acousticness"]), 2)
         reasons.append(f"produced-sound preference (+{acoustic_points})")
     score += acoustic_points
 
     return round(score, 4), reasons
 
 
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, List[str]]]:
+def recommend_songs(
+    user_prefs: Dict,
+    songs: List[Dict],
+    k: int = 5,
+    genre_weight: float = 2.0,
+    mood_weight: float = 1.5,
+    energy_weight: float = 1.0,
+    acoustic_weight: float = 0.5,
+) -> List[Tuple[Dict, float, List[str]]]:
     """Rank all songs by score and return the top-k as (song_dict, score, reasons) tuples."""
-    scored = [(song, *score_song(user_prefs, song)) for song in songs]
+    scored = [
+        (song, *score_song(user_prefs, song, genre_weight, mood_weight, energy_weight, acoustic_weight))
+        for song in songs
+    ]
     return sorted(scored, key=lambda x: x[1], reverse=True)[:k]
